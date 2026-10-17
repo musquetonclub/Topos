@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Topos du Musqueton</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Topos du Musqueton</h1>
+  <div id="user" hidden><span id="who"></span><button id="logout" class="lien">Se déconnecter</button></div>
+</header>
+<main>
+  <section id="login" class="boite">
+    <h2>Connexion</h2>
+    <p class="doux">Utilise ton numéro de licence FFCAM et ta date de naissance.</p>
+    <form id="loginForm">
+      <label>Numéro de licence <input id="licence" required autocomplete="username"></label>
+      <label>Date de naissance <input id="naissance" type="date" required></label>
+      <button class="btn">Se connecter</button>
+    </form>
+  </section>
+  <section id="app" hidden>
+    <div class="barre">
+      <input id="q" type="search" placeholder="Titre, région, propriétaire" aria-label="Rechercher un topo">
+      <label class="case"><input type="checkbox" id="fDispo"> Disponibles</label>
+      <label class="case"><input type="checkbox" id="fMes"> Mes topos et emprunts</label>
+      <button id="add" class="btn">Ajouter un topo</button>
+    </div>
+    <div id="liste"></div>
+  </section>
+</main>
+<dialog id="dlg"></dialog>
+<datalist id="dlTitres"></datalist>
+<datalist id="dlRegions"></datalist>
+<div id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
