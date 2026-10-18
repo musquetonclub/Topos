@@ -6,6 +6,8 @@ let config = { dureeDefaut: 8, dureeMax: 30 };
 let admin = false;
 let topos = [];
 const $ = id => document.getElementById(id);
+const TUILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+let vue = 'liste', carteLeaflet = null, calque = null;
 
 // ---------- Outils ----------
 // Crée un élément DOM. Les textes passent par textContent : aucune donnée n'est interprétée comme du HTML.
@@ -65,16 +67,26 @@ async function agir(fn, ok) {
 // ---------- Fenêtre de saisie générique ----------
 function formulaire(titre, champs, valider, ok, libelle = 'Valider', aide = '') {
   const dlg = $('dlg');
-  const form = el('form', {},
-    el('h2', { textContent: titre }),
-    aide && el('p', { class: 'doux', textContent: aide }),
-    champs.map(c => el('label', {}, c.label,
+  const apres = [];
+  const rendu = champs.map(c => {
+    if (c.type === 'lieu') {
+      const zone = el('div', { class: 'carte-lieu' });
+      const saisie = el('input', { name: c.name, type: 'hidden', value: c.value || '' });
+      apres.push(() => selecteurLieu(zone, saisie));
+      return el('div', { class: 'lieu' }, c.label, zone, saisie);
+    }
+    return el('label', {}, c.label,
       c.type === 'textarea'
         ? el('textarea', { name: c.name, rows: 5, maxlength: c.maxlength, required: c.required, value: c.value || '' })
         : el('input', {
             name: c.name, type: c.type || 'text', required: c.required, min: c.min, max: c.max,
             maxlength: c.maxlength, list: c.list, value: c.type === 'checkbox' ? null : (c.value || '')
-          }))),
+          }));
+  });
+  const form = el('form', {},
+    el('h2', { textContent: titre }),
+    aide && el('p', { class: 'doux', textContent: aide }),
+    rendu,
     el('div', { class: 'actions' },
       el('button', { type: 'button', class: 'btn sec', textContent: 'Annuler', onclick: () => dlg.close() }),
       el('button', { class: 'btn', textContent: libelle })));
@@ -91,6 +103,23 @@ function formulaire(titre, champs, valider, ok, libelle = 'Valider', aide = '') 
   });
   dlg.replaceChildren(form);
   dlg.showModal();
+  apres.forEach(f => f());   // les cartes s'initialisent une fois la fenêtre affichée
+}
+
+// Mini-carte : un clic place le repère et enregistre « lat, lng » dans le champ caché
+function selecteurLieu(zone, saisie) {
+  const depart = saisie.value ? saisie.value.split(',').map(Number) : null;
+  const m = L.map(zone).setView(depart || [46.6, 2.4], depart ? 11 : 5);
+  L.tileLayer(TUILES, { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(m);
+  let repere = null;
+  const poser = p => {
+    saisie.value = p.lat.toFixed(5) + ', ' + p.lng.toFixed(5);
+    if (repere) repere.setLatLng(p);
+    else repere = L.circleMarker(p, { radius: 9, weight: 2, color: '#1d2630', fillColor: '#b8571a', fillOpacity: .9 }).addTo(m);
+  };
+  if (depart) poser({ lat: depart[0], lng: depart[1] });
+  m.on('click', e => poser(e.latlng));
+  setTimeout(() => m.invalidateSize(), 50);
 }
 
 // ---------- Actions sur un topo ----------
@@ -119,11 +148,16 @@ function contacter(t) {
 }
 
 function modifier(t) {
-  formulaire('Modifier « ' + t.titre + ' »', [
+  const champs = [
     { name: 'edition', label: 'Édition', value: t.edition, maxlength: 80 },
     { name: 'datePublication', label: 'Année de publication', value: t.datePublication, maxlength: 10 },
     { name: 'notes', label: 'Notes', type: 'textarea', value: t.notes, maxlength: 300 }
-  ], d => api('modifier', { id: t.id, ...d }), 'Topo modifié.', 'Enregistrer');
+  ];
+  if (!t.position || admin) {
+    champs.push({ name: 'position', label: 'Lieu du topo : clique sur la carte pour le placer', type: 'lieu', value: t.position });
+  }
+  formulaire('Modifier « ' + t.titre + ' »', champs,
+    d => api('modifier', { id: t.id, ...d }), 'Topo modifié.', 'Enregistrer');
 }
 
 function retirer(t) {
@@ -144,11 +178,12 @@ function ajouter() {
     { name: 'region', label: 'Région', list: 'dlRegions', maxlength: 80 },
     { name: 'edition', label: 'Édition (ex : 3e édition)', maxlength: 80 },
     { name: 'datePublication', label: 'Année de publication', maxlength: 10 },
-    { name: 'notes', label: 'Notes (état, pages manquantes…)', type: 'textarea', maxlength: 300 }
+    { name: 'notes', label: 'Notes (état, pages manquantes…)', type: 'textarea', maxlength: 300 },
+    { name: 'position', label: 'Lieu du topo : clique sur la carte pour placer un repère (facultatif)', type: 'lieu' },
   ];
   if (admin) champs.push({ name: 'pourClub', label: 'Ce topo appartient au club', type: 'checkbox' });
   formulaire('Ajouter un topo', champs, d => api('ajouter', d), 'Topo ajouté.', 'Ajouter',
-    'Tu en es le propriétaire : les adhérents pourront te contacter et l’emprunter.');
+        'Tu en es le propriétaire : les adhérents pourront te contacter et l’emprunter. Si ce topo existe déjà avec un lieu, ce lieu est conservé.');
 }
 
 // ---------- Affichage ----------
@@ -182,13 +217,8 @@ function carte(t) {
       t.peutRetirer && b('Retirer', () => retirer(t), 'sec danger')));
 }
 
-function afficher() {
-  const q = norm($('q').value);
-  const liste = topos
-    .filter(t => norm([t.titre, t.region, t.proprietaire].join(' ')).includes(q))
-    .filter(t => !$('fDispo').checked || t.disponible)
-    .filter(t => !$('fMes').checked || t.estProprietaire || t.empruntParMoi || t.maPosition)
-    .sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
+function afficherListe() {
+  const liste = filtres();
 
   if (!liste.length) {
     $('liste').replaceChildren(el('p', { class: 'doux', textContent: topos.length
@@ -211,6 +241,49 @@ async function charger() {
   afficher();
 }
 
+function filtres() {
+  const q = norm($('q').value);
+  return topos
+    .filter(t => norm([t.titre, t.region, t.proprietaire].join(' ')).includes(q))
+    .filter(t => !$('fDispo').checked || t.disponible)
+    .filter(t => !$('fMes').checked || t.estProprietaire || t.empruntParMoi || t.maPosition)
+    .sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
+}
+
+function afficher() {
+  $('liste').hidden = vue !== 'liste';
+  $('carte').hidden = vue !== 'carte';
+  $('vueListe').setAttribute('aria-pressed', vue === 'liste');
+  $('vueCarte').setAttribute('aria-pressed', vue === 'carte');
+  if (vue === 'liste') afficherListe(); else afficherCarte();
+}
+
+// Carte générale : un point par topo, vert si au moins un exemplaire est disponible
+function afficherCarte() {
+  if (!carteLeaflet) {
+    carteLeaflet = L.map('carte').setView([46.6, 2.4], 5);
+    L.tileLayer(TUILES, { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(carteLeaflet);
+    calque = L.layerGroup().addTo(carteLeaflet);
+  }
+  carteLeaflet.invalidateSize();
+  calque.clearLayers();
+  const groupes = {};
+  filtres().filter(t => t.lat != null && t.lng != null).forEach(t => {
+    const cle = t.titre + '|' + t.lat + '|' + t.lng;
+    const g = groupes[cle] = groupes[cle] || { t, n: 0, libres: 0 };
+    g.n++;
+    if (t.disponible) g.libres++;
+  });
+  const points = Object.values(groupes).map(g => {
+    L.circleMarker([g.t.lat, g.t.lng], { radius: 9, weight: 2, color: '#1d2630', fillOpacity: .9, fillColor: g.libres ? '#2a7d4f' : '#b8571a' })
+      .bindPopup(el('div', {}, el('strong', { textContent: g.t.titre }), el('br'), g.t.region,
+        el('br'), g.libres + ' disponible(s) sur ' + g.n))
+      .addTo(calque);
+    return [g.t.lat, g.t.lng];
+  });
+  if (points.length) carteLeaflet.fitBounds(points, { padding: [30, 30], maxZoom: 12 });
+}
+
 // ---------- Connexion ----------
 async function entrer(r) {
   config = r.config || config;
@@ -220,6 +293,7 @@ async function entrer(r) {
   $('app').hidden = false;
   $('user').hidden = false;
   $('liste').textContent = 'Chargement…';
+  $('btnAdmins').hidden = !admin;
   try { await charger(); }
   catch (e) { if (e.message !== 'SESSION_EXPIREE') toast(e.message, true); }
 }
@@ -255,5 +329,33 @@ $('logout').addEventListener('click', () => {
 $('add').addEventListener('click', ajouter);
 ['q', 'fDispo', 'fMes'].forEach(id => $(id).addEventListener('input', afficher));
 
+$('btnAdmins').addEventListener('click', gererAdmins);
+
+$('vueListe').addEventListener('click', () => { vue = 'liste'; afficher(); });
+$('vueCarte').addEventListener('click', () => { vue = 'carte'; afficher(); });
+
+async function gererAdmins() {
+  let membres;
+  try { membres = (await api('admins')).membres; } catch (e) { return toast(e.message, true); }
+  const liste = el('div');
+  const q = el('input', { type: 'search', placeholder: 'Rechercher un adhérent pour le nommer' });
+  const dessiner = () => liste.replaceChildren(...membres
+    .filter(m => m.admin || (q.value && norm(m.nom).includes(norm(q.value))))
+    .slice(0, 30)
+    .map(m => el('p', { class: 'ligne' }, m.nom + (m.admin ? ' (admin)' : ''),
+      m.fixe ? el('span', { class: 'doux', textContent: 'défini dans le code' })
+        : el('button', { class: 'btn petit sec', textContent: m.admin ? 'Retirer' : 'Nommer admin',
+            onclick: async () => {
+              try { await api('definirAdmin', { id: m.id, admin: !m.admin }); m.admin = !m.admin; dessiner(); }
+              catch (e) { toast(e.message, true); }
+            } }))));
+  q.addEventListener('input', dessiner);
+  dessiner();
+  const dlg = $('dlg');
+  dlg.replaceChildren(el('h2', { textContent: 'Admins' }), q, liste,
+    el('div', { class: 'actions' }, el('button', { class: 'btn', textContent: 'Fermer', onclick: () => dlg.close() })));
+  dlg.showModal();
+}
+
 // Reconnexion automatique si une session est encore valide
-if (token) api('session').then(entrer).catch(() => {});
+if (token) { $('login').hidden = true; api('session').then(entrer).catch(() => { $('login').hidden = false; }); }

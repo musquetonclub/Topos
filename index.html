@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Topos du Musqueton</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,14 +28,19 @@
       <label class="case"><input type="checkbox" id="fDispo"> Disponibles</label>
       <label class="case"><input type="checkbox" id="fMes"> Mes topos et emprunts</label>
       <button id="add" class="btn">Ajouter un topo</button>
+      <button id="btnAdmins" class="btn sec" hidden>Gérer les admins</button>
+      <button id="vueListe" class="btn sec" aria-pressed="true">Liste</button>
+      <button id="vueCarte" class="btn sec" aria-pressed="false">Carte</button>
     </div>
     <div id="liste"></div>
+    <div id="carte" hidden></div>
   </section>
 </main>
 <dialog id="dlg"></dialog>
 <datalist id="dlTitres"></datalist>
 <datalist id="dlRegions"></datalist>
 <div id="toast" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
